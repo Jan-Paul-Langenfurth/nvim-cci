@@ -495,7 +495,7 @@ describe('actions.open_browser()', function()
     assert.is_nil(opened_url)
   end)
 
-  it('falls back to workflow URL when job_number is missing (approval/pending jobs)', function()
+  it('falls back to workflow URL when job_number is missing (pending jobs)', function()
     local opened_url = nil
     setup_open(function(url) opened_url = url end)
 
@@ -504,8 +504,26 @@ describe('actions.open_browser()', function()
       id              = 'job-uuid',
       pipeline_number = 42,
       workflow_id     = 'wf-uuid',
-      data            = { id = 'job-uuid', name = 'hold', status = 'on_hold', type = 'approval' },
+      data            = { id = 'job-uuid', name = 'build', status = 'blocked', type = 'build' },
       -- job_number intentionally missing
+    }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    local expected = 'https://app.circleci.com/pipelines/' .. SLUG .. '/42/workflows/wf-uuid'
+    assert.equals(expected, opened_url)
+  end)
+
+  it('falls back to workflow URL for approval jobs even when job_number is set', function()
+    local opened_url = nil
+    setup_open(function(url) opened_url = url end)
+
+    local entry = {
+      type            = 'job',
+      id              = 'job-uuid',
+      pipeline_number = 42,
+      workflow_id     = 'wf-uuid',
+      data            = { id = 'job-uuid', name = 'hold', status = 'on_hold', type = 'approval',
+                          job_number = 3 },  -- CircleCI sets job_number even for approvals
     }
     actions.open_browser({ [1] = entry }, 1, SLUG)
 

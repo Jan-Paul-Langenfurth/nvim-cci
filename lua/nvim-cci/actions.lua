@@ -206,11 +206,12 @@ function M.open_browser(line_map, cursor_line, slug)
   elseif entry.type == 'workflow' then
     url = base .. '/' .. pn .. '/workflows/' .. entry.id
   elseif entry.type == 'job' then
-    local jn = entry.data and entry.data.job_number
-    if jn then
+    local job = entry.data
+    local jn  = job and job.job_number
+    if jn and job.type ~= 'approval' then
       url = base .. '/' .. pn .. '/workflows/' .. entry.workflow_id .. '/jobs/' .. jn
     else
-      -- Approval / blocked / pending jobs have no job_number; open the workflow page
+      -- Approval jobs and jobs without a number: open the parent workflow page
       url = base .. '/' .. pn .. '/workflows/' .. entry.workflow_id
     end
   end
