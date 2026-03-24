@@ -27,6 +27,54 @@ function M.status_icon(status)
   return M.STATUS_ICONS[status] or '?'
 end
 
+--- Compute a composite icon (and highlight) for a pipeline from its loaded workflows.
+--- Returns nil, nil when workflows are running (defer to normal icon) or absent.
+--- @param workflows table
+--- @return string|nil, string|nil
+local function pipeline_icon_from_workflows(workflows)
+  if not workflows or #workflows == 0 then return nil, nil end
+
+  local has_failure = false
+  local has_hold    = false
+  local has_running = false
+  local all_success = true
+
+  for _, wf in ipairs(workflows) do
+    local s = wf.status or ''
+    if s == 'running' or s == 'failing' then
+      has_running = true
+      all_success = false
+    elseif s == 'failed' or s == 'error' then
+      has_failure = true
+      all_success = false
+    elseif s == 'on_hold' then
+      has_hold    = true
+      all_success = false
+    elseif s ~= 'success' then
+      all_success = false
+    end
+  end
+
+  if has_running then
+    return M.STATUS_ICONS.running, M.STATUS_HIGHLIGHTS.running
+  end
+
+  local icon = ''
+  if all_success  then icon = icon .. M.STATUS_ICONS.success end
+  if has_failure  then icon = icon .. M.STATUS_ICONS.failed  end
+  if has_hold     then icon = icon .. M.STATUS_ICONS.on_hold end
+
+  if icon == '' then return nil, nil end
+
+  local hl
+  if has_failure then hl = M.STATUS_HIGHLIGHTS.failed
+  elseif has_hold then hl = M.STATUS_HIGHLIGHTS.on_hold
+  else hl = M.STATUS_HIGHLIGHTS.success
+  end
+
+  return icon, hl
+end
+
 --- Return the highlight group name for a given status string, or nil.
 --- @param status string
 --- @return string|nil
@@ -123,13 +171,18 @@ function M.build_lines(state)
   else
     for _, pipeline in ipairs(state.pipelines) do
       local status = pipeline.state or pipeline.status or 'unknown'
-      local icon   = M.status_icon(status)
+      local icon, hl
+      local loaded_wfs = state.workflows and state.workflows[pipeline.id]
+      icon, hl = pipeline_icon_from_workflows(loaded_wfs)
+      if not icon then
+        icon = M.status_icon(status)
+        hl   = M.status_hl(status)
+      end
       local branch = (pipeline.vcs and pipeline.vcs.branch)
                      or pipeline.branch
                      or '(unknown branch)'
       local ago    = M.time_ago(pipeline.created_at)
       local text   = string.format('  %s %s · %s', icon, branch, ago)
-      local hl     = M.status_hl(status)
       -- icon starts at byte 2 (0-based), length of icon in UTF-8 bytes
       push(text, { type = 'pipeline', id = pipeline.id, data = pipeline,
                    pipeline_number = pipeline.number },
