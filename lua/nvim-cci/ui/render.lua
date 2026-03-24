@@ -169,24 +169,26 @@ function M.build_lines(state)
   -- ── Keybinding legend ────────────────────────────────────────────────────────
   push('  ' .. ('─'):rep(43), { type = 'help' }, 'CCIHelp', 0, -1)
 
+  -- spans: { col_start, col_end } 0-indexed, matching nvim_buf_add_highlight convention
+  -- text: '  <CR> expand  r refresh  f filter  q close'
+  --        ^2    ^6       ^15        ^26        ^36
+  -- text: '  a approve  x abort  R rerun'
+  --        ^2  ^13       ^22
   local legend_rows = {
-    { text = '  <CR> expand  r refresh  f filter  q close',
-      keys = { '<CR>', 'r', 'f', 'q' } },
-    { text = '  a approve  x abort  R rerun',
-      keys = { 'a', 'x', 'R' } },
+    { text  = '  <CR> expand  r refresh  f filter  q close',
+      spans = { {2, 6}, {15, 16}, {26, 27}, {36, 37} } },
+    { text  = '  a approve  x abort  R rerun',
+      spans = { {2, 3}, {13, 14}, {22, 23} } },
   }
   for _, row in ipairs(legend_rows) do
     push(row.text, { type = 'help' }, 'CCIHelp', 0, -1)
-    for _, key in ipairs(row.keys) do
-      local s, e = row.text:find(key, 1, true)
-      if s then
-        highlights[#highlights + 1] = {
-          line      = #lines - 1,
-          col_start = s - 1,  -- 0-based
-          col_end   = e,
-          hl_group  = 'CCIHelpKey',
-        }
-      end
+    for _, span in ipairs(row.spans) do
+      highlights[#highlights + 1] = {
+        line      = #lines - 1,
+        col_start = span[1],
+        col_end   = span[2],
+        hl_group  = 'CCIHelpKey',
+      }
     end
   end
 
