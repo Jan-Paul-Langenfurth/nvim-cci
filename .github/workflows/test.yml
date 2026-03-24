@@ -1,0 +1,35 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install Lua + LuaRocks
+        run: |
+          sudo apt-get install -y lua5.4 luarocks
+
+      - name: Install busted and luacheck
+        run: |
+          luarocks install busted
+          luarocks install luacheck
+
+      - name: Run tests
+        run: make test
+
+      - name: Run lint
+        run: make lint
