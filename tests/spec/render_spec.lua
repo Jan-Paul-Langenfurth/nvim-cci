@@ -263,6 +263,38 @@ describe('render.build_lines() — expand/collapse', function()
   end)
 end)
 
+-- ── Tests: branch filter header ──────────────────────────────────────────────
+
+describe('render.build_lines() — branch_filter header', function()
+  it('emits a [branch: ...] header line when branch_filter is set', function()
+    local s = make_state({
+      branch_filter = 'feat/my-branch',
+      pipelines     = { pipeline('p1', 'success', 'feat/my-branch') },
+    })
+    local lines = render.build_lines(s)
+    -- first line is the header, second is the pipeline row
+    assert.equals(2, #lines)
+    assert.truthy(lines[1]:find('%[branch: feat/my%-branch%]'))
+  end)
+
+  it('emits no header line when branch_filter is nil', function()
+    local s = make_state({
+      pipelines = { pipeline('p1', 'success', 'main') },
+    })
+    local lines = render.build_lines(s)
+    assert.equals(1, #lines)
+    assert.is_nil(lines[1]:find('%[branch:'))
+  end)
+
+  it('header appears before pipelines and before loading message', function()
+    local s = make_state({ branch_filter = 'main', loading = true })
+    local lines = render.build_lines(s)
+    assert.equals(2, #lines)
+    assert.truthy(lines[1]:find('%[branch:'))
+    assert.truthy(lines[2]:find('Loading'))
+  end)
+end)
+
 -- ── Tests: time_ago (basic smoke) ────────────────────────────────────────────
 
 describe('render.time_ago()', function()

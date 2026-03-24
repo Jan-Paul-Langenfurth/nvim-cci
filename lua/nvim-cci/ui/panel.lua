@@ -5,11 +5,12 @@ local PANEL_WIDTH = 50
 -- ── Panel state ───────────────────────────────────────────────────────────────
 
 local state = {
-  pipelines = {},
-  expanded  = {},
-  workflows = {},
-  jobs      = {},
-  loading   = false,
+  pipelines     = {},
+  expanded      = {},
+  workflows     = {},
+  jobs          = {},
+  loading       = false,
+  branch_filter = nil,  -- string | nil
 }
 
 local panel_buf  = nil
@@ -31,6 +32,7 @@ local function set_keymaps(buf)
   end
   map('<CR>', function() M.toggle_expand() end)
   map('r',    function() M.refresh() end)
+  map('f',    function() M.filter_branch() end)
   map('q',    function() M.close() end)
   map('a', function()
     local render  = require('nvim-cci.ui.render')
@@ -96,11 +98,12 @@ function M.open()
   end
 
   -- Reset state for fresh open
-  state.pipelines = {}
-  state.expanded  = {}
-  state.workflows = {}
-  state.jobs      = {}
-  state.loading   = true
+  state.pipelines     = {}
+  state.expanded      = {}
+  state.workflows     = {}
+  state.jobs          = {}
+  state.loading       = true
+  state.branch_filter = nil
 
   panel_buf = create_buf()
   panel_win = create_win(panel_buf)
@@ -140,7 +143,7 @@ function M.refresh()
   state.loading = true
   render.draw(panel_buf, state)
 
-  api.get_pipelines(M._slug, function(err, data)
+  api.get_pipelines(M._slug, state.branch_filter, function(err, data)
     vim.schedule(function()
       state.loading = false
       if err then
@@ -153,6 +156,41 @@ function M.refresh()
         render.draw(panel_buf, state)
       end
     end)
+  end)
+end
+
+--- Return up to n distinct branch names from the pipeline list, most recent first.
+--- @param pipelines table
+--- @param n number
+--- @return string[]
+local function recent_branches(pipelines, n)
+  local seen, result = {}, {}
+  for _, p in ipairs(pipelines) do
+    local branch = p.vcs and p.vcs.branch
+    if branch and not seen[branch] then
+      seen[branch] = true
+      result[#result + 1] = branch
+      if #result >= n then break end
+    end
+  end
+  return result
+end
+
+--- Show a branch picker and re-fetch pipelines filtered to the chosen branch.
+function M.filter_branch()
+  if not is_open() then return end
+  local items = { 'All branches' }
+  for _, b in ipairs(recent_branches(state.pipelines, 5)) do
+    items[#items + 1] = b
+  end
+  vim.ui.select(items, { prompt = 'Filter by branch:' }, function(choice)
+    if not choice then return end
+    if choice == 'All branches' then
+      state.branch_filter = nil
+    else
+      state.branch_filter = choice
+    end
+    M.refresh()
   end)
 end
 

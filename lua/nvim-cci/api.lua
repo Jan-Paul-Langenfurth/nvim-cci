@@ -67,11 +67,16 @@ end
 
 -- ── Public API ────────────────────────────────────────────────────────────────
 
---- GET /project/{slug}/pipeline — returns first page of pipelines.
+--- GET /project/{slug}/pipeline[?branch=<branch>] — returns first page of pipelines.
 --- @param project_slug string  e.g. "github/org/repo"
+--- @param branch string|nil  optional branch filter
 --- @param cb function  cb(err, data)
-function M.get_pipelines(project_slug, cb)
-  get('/project/' .. project_slug .. '/pipeline', cb)
+function M.get_pipelines(project_slug, branch, cb)
+  local path = '/project/' .. project_slug .. '/pipeline'
+  if branch then
+    path = path .. '?branch=' .. branch
+  end
+  get(path, cb)
 end
 
 --- GET /pipeline/{id}/workflow — returns workflows for a pipeline.

@@ -82,12 +82,12 @@ describe('api (success responses)', function()
   after_each(teardown_api)
 
   describe('get_pipelines()', function()
-    it('calls GET /project/{slug}/pipeline', function()
+    it('calls GET /project/{slug}/pipeline with nil branch', function()
       local fixture = { items = { { id = 'pipe-1' } }, next_page_token = nil }
       local mock_curl = setup_api(200, fixture)
 
       local got_err, got_data
-      api.get_pipelines('github/org/repo', function(err, data)
+      api.get_pipelines('github/org/repo', nil, function(err, data)
         got_err  = err
         got_data = data
       end)
@@ -98,9 +98,20 @@ describe('api (success responses)', function()
       assert.equals(BASE_URL .. '/project/github/org/repo/pipeline', mock_curl._captured.url)
     end)
 
+    it('appends ?branch=<name> when branch is provided', function()
+      local mock_curl = setup_api(200, { items = {} })
+
+      api.get_pipelines('github/org/repo', 'feat/my-branch', function() end)
+
+      assert.equals(
+        BASE_URL .. '/project/github/org/repo/pipeline?branch=feat/my-branch',
+        mock_curl._captured.url
+      )
+    end)
+
     it('sends the Circle-Token header', function()
       local mock_curl = setup_api(200, {})
-      api.get_pipelines('github/org/repo', function() end)
+      api.get_pipelines('github/org/repo', nil, function() end)
       assert.equals(FAKE_TOKEN, mock_curl._captured.opts.headers['Circle-Token'])
     end)
   end)
@@ -191,7 +202,7 @@ describe('api (error handling)', function()
 
     setup_api(401, nil)
     local got_err, got_data
-    api.get_pipelines('github/org/repo', function(err, data)
+    api.get_pipelines('github/org/repo', nil, function(err, data)
       got_err  = err
       got_data = data
     end)
@@ -206,7 +217,7 @@ describe('api (error handling)', function()
   it('returns network error string on status 0', function()
     setup_api(0, nil)
     local got_err, got_data
-    api.get_pipelines('github/org/repo', function(err, data)
+    api.get_pipelines('github/org/repo', nil, function(err, data)
       got_err  = err
       got_data = data
     end)
@@ -218,7 +229,7 @@ describe('api (error handling)', function()
   it('returns API error string on 5xx status', function()
     setup_api(500, nil)
     local got_err, got_data
-    api.get_pipelines('github/org/repo', function(err, data)
+    api.get_pipelines('github/org/repo', nil, function(err, data)
       got_err  = err
       got_data = data
     end)
@@ -245,7 +256,7 @@ describe('api (error handling)', function()
     api._curl = mock_curl
 
     local got_err
-    api.get_pipelines('github/org/repo', function(err) got_err = err end)
+    api.get_pipelines('github/org/repo', nil, function(err) got_err = err end)
     assert.truthy(got_err:find('Failed to decode'))
   end)
 end)

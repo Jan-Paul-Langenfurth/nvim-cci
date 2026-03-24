@@ -109,6 +109,11 @@ function M.build_lines(state)
     end
   end
 
+  if state.branch_filter then
+    local header = '  [branch: ' .. state.branch_filter .. ']'
+    push(header, { type = 'status' }, 'CCIStatusOnHold', 2, #header)
+  end
+
   if state.loading then
     push('  Loading…', { type = 'status' })
     return lines, highlights, line_meta
