@@ -392,6 +392,150 @@ describe('actions.rerun()', function()
   end)
 end)
 
+-- ── open_browser() ────────────────────────────────────────────────────────────
+
+describe('actions.open_browser()', function()
+  local SLUG = 'github/myorg/myrepo'
+
+  local function setup_open(open_fn)
+    actions._open_url = open_fn or function() end
+    actions._panel    = make_panel()
+  end
+
+  after_each(function()
+    teardown()
+    actions._open_url = nil
+  end)
+
+  it('opens job URL for a job row', function()
+    local opened_url = nil
+    setup_open(function(url) opened_url = url end)
+
+    local entry = {
+      type            = 'job',
+      id              = 'job-uuid',
+      pipeline_number = 42,
+      workflow_id     = 'wf-uuid',
+      data            = { id = 'job-uuid', name = 'test', status = 'failed',
+                          job_number = 7 },
+    }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    assert.equals(
+      'https://app.circleci.com/pipelines/' .. SLUG .. '/42/workflows/wf-uuid/jobs/7',
+      opened_url
+    )
+  end)
+
+  it('opens workflow URL for a workflow row', function()
+    local opened_url = nil
+    setup_open(function(url) opened_url = url end)
+
+    local entry = {
+      type            = 'workflow',
+      id              = 'wf-uuid',
+      pipeline_number = 10,
+      data            = { id = 'wf-uuid', name = 'build', status = 'running' },
+    }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    assert.equals(
+      'https://app.circleci.com/pipelines/' .. SLUG .. '/10/workflows/wf-uuid',
+      opened_url
+    )
+  end)
+
+  it('opens pipeline URL for a pipeline row', function()
+    local opened_url = nil
+    setup_open(function(url) opened_url = url end)
+
+    local entry = {
+      type            = 'pipeline',
+      id              = 'pipe-uuid',
+      pipeline_number = 5,
+      data            = { id = 'pipe-uuid', number = 5, state = 'success' },
+    }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    assert.equals(
+      'https://app.circleci.com/pipelines/' .. SLUG .. '/5',
+      opened_url
+    )
+  end)
+
+  it('warns and does not open for a status row', function()
+    local opened_url = nil
+    local warned     = false
+    local orig_notify = vim.notify
+    vim.notify = function(_, level) if level == vim.log.levels.WARN then warned = true end end
+    setup_open(function(url) opened_url = url end)
+
+    local entry = { type = 'status' }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    vim.notify = orig_notify
+    assert.is_true(warned)
+    assert.is_nil(opened_url)
+  end)
+
+  it('warns and does not open for a help row', function()
+    local opened_url = nil
+    local warned     = false
+    local orig_notify = vim.notify
+    vim.notify = function(_, level) if level == vim.log.levels.WARN then warned = true end end
+    setup_open(function(url) opened_url = url end)
+
+    local entry = { type = 'help' }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    vim.notify = orig_notify
+    assert.is_true(warned)
+    assert.is_nil(opened_url)
+  end)
+
+  it('errors and does not open when job_number is missing', function()
+    local opened_url    = nil
+    local notified_level = nil
+    local orig_notify = vim.notify
+    vim.notify = function(_, level) notified_level = level end
+    setup_open(function(url) opened_url = url end)
+
+    local entry = {
+      type            = 'job',
+      id              = 'job-uuid',
+      pipeline_number = 42,
+      workflow_id     = 'wf-uuid',
+      data            = { id = 'job-uuid', name = 'test', status = 'failed' },
+      -- job_number intentionally missing
+    }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    vim.notify = orig_notify
+    assert.equals(vim.log.levels.ERROR, notified_level)
+    assert.is_nil(opened_url)
+  end)
+
+  it('errors and does not open when pipeline_number is missing', function()
+    local opened_url    = nil
+    local notified_level = nil
+    local orig_notify = vim.notify
+    vim.notify = function(_, level) notified_level = level end
+    setup_open(function(url) opened_url = url end)
+
+    local entry = {
+      type = 'pipeline',
+      id   = 'pipe-uuid',
+      -- pipeline_number intentionally missing
+      data = { id = 'pipe-uuid', state = 'success' },
+    }
+    actions.open_browser({ [1] = entry }, 1, SLUG)
+
+    vim.notify = orig_notify
+    assert.equals(vim.log.levels.ERROR, notified_level)
+    assert.is_nil(opened_url)
+  end)
+end)
+
 -- ── render.line_map integration (smoke test) ─────────────────────────────────
 
 describe('render.line_map exposure', function()

@@ -2,9 +2,10 @@ local M = {}
 
 -- ── Injectable dependencies (override in tests) ───────────────────────────────
 
-M._api     = nil  -- mock for require('nvim-cci.api')
-M._panel   = nil  -- mock for require('nvim-cci.ui.panel')
-M._confirm = nil  -- override confirmation: fn(msg) → bool
+M._api      = nil  -- mock for require('nvim-cci.api')
+M._panel    = nil  -- mock for require('nvim-cci.ui.panel')
+M._confirm  = nil  -- override confirmation: fn(msg) → bool
+M._open_url = nil  -- override open_url: fn(url) (for tests)
 
 -- ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -23,6 +24,21 @@ local function confirm(msg)
   if M._confirm then return M._confirm(msg) end
   -- vim.fn.confirm returns 1 for &Yes, 2 for &No, 0 for <Esc>
   return vim.fn.confirm(msg, '&Yes\n&No', 2) == 1
+end
+
+--- Open a URL in the system browser.
+--- @param url string
+local function open_url(url)
+  if M._open_url then
+    M._open_url(url)
+    return
+  end
+  if vim.ui and vim.ui.open then
+    vim.ui.open(url)
+  else
+    local cmd = vim.fn.has('mac') == 1 and 'open' or 'xdg-open'
+    vim.fn.jobstart({ cmd, url }, { detach = true })
+  end
 end
 
 --- Resolve the entity at cursor_line from line_map.
@@ -158,6 +174,42 @@ function M.rerun(line_map, cursor_line)
       end
     end)
   end)
+end
+
+--- Open the CircleCI page for the row under the cursor in the system browser.
+--- @param line_map table
+--- @param cursor_line number
+--- @param slug string  project slug, e.g. "github/org/repo"
+function M.open_browser(line_map, cursor_line, slug)
+  local entry = resolve(line_map, cursor_line)
+
+  if not entry or entry.type == 'status' or entry.type == 'help' then
+    vim.notify('[nvim-cci] No pipeline item on this line.', vim.log.levels.WARN)
+    return
+  end
+
+  local base = 'https://app.circleci.com/pipelines/' .. slug
+  local pn   = entry.pipeline_number or (entry.data and entry.data.number)
+  if not pn then
+    vim.notify('[nvim-cci] Pipeline number unavailable.', vim.log.levels.ERROR)
+    return
+  end
+
+  local url
+  if entry.type == 'pipeline' then
+    url = base .. '/' .. pn
+  elseif entry.type == 'workflow' then
+    url = base .. '/' .. pn .. '/workflows/' .. entry.id
+  elseif entry.type == 'job' then
+    local jn = entry.data and entry.data.job_number
+    if not jn then
+      vim.notify('[nvim-cci] Job number unavailable.', vim.log.levels.ERROR)
+      return
+    end
+    url = base .. '/' .. pn .. '/workflows/' .. entry.workflow_id .. '/jobs/' .. jn
+  end
+
+  open_url(url)
 end
 
 return M

@@ -174,6 +174,42 @@ describe('render.build_lines() — line_meta', function()
     assert.equals('pipeline', meta[1].type)
     assert.equals('p1', meta[1].id)
   end)
+
+  it('pipeline meta carries pipeline_number', function()
+    local p = pipeline('p1', 'success', 'main')
+    p.number = 99
+    local _, _, meta = render.build_lines(make_state({ pipelines = { p } }))
+    assert.equals(99, meta[1].pipeline_number)
+  end)
+
+  it('workflow meta carries pipeline_number', function()
+    local p = pipeline('p1', 'success', 'main')
+    p.number = 7
+    local s = make_state({
+      pipelines = { p },
+      expanded  = { p1 = true },
+      workflows = { ['p1'] = { { id = 'w1', name = 'build', status = 'success' } } },
+    })
+    local _, _, meta = render.build_lines(s)
+    -- meta[1] = pipeline, meta[2] = workflow
+    assert.equals('workflow', meta[2].type)
+    assert.equals(7, meta[2].pipeline_number)
+  end)
+
+  it('job meta carries pipeline_number', function()
+    local p = pipeline('p1', 'success', 'main')
+    p.number = 3
+    local s = make_state({
+      pipelines = { p },
+      expanded  = { p1 = true },
+      workflows = { ['p1'] = { { id = 'w1', name = 'build', status = 'success' } } },
+      jobs      = { ['w1'] = { { id = 'j1', name = 'test', status = 'failed' } } },
+    })
+    local _, _, meta = render.build_lines(s)
+    -- meta[1] = pipeline, meta[2] = workflow, meta[3] = job
+    assert.equals('job', meta[3].type)
+    assert.equals(3, meta[3].pipeline_number)
+  end)
 end)
 
 -- ── Tests: expand/collapse ────────────────────────────────────────────────────
@@ -351,7 +387,7 @@ describe('render.build_lines() — legend', function()
   it('legend text contains all bound keys', function()
     local lines = render.build_lines(make_state())
     local legend_text = table.concat(lines, '\n')
-    for _, key in ipairs({ '<CR>', 'r', 'f', 'a', 'x', 'R', 'q' }) do
+    for _, key in ipairs({ '<CR>', 'r', 'f', 'a', 'x', 'R', 'q', 'o' }) do
       assert.truthy(legend_text:find(key, 1, true),
         'expected key "' .. key .. '" in legend')
     end

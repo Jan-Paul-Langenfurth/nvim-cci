@@ -131,7 +131,8 @@ function M.build_lines(state)
       local text   = string.format('  %s %s · %s', icon, branch, ago)
       local hl     = M.status_hl(status)
       -- icon starts at byte 2 (0-based), length of icon in UTF-8 bytes
-      push(text, { type = 'pipeline', id = pipeline.id, data = pipeline },
+      push(text, { type = 'pipeline', id = pipeline.id, data = pipeline,
+                   pipeline_number = pipeline.number },
            hl, 2, 2 + #icon)
 
       if state.expanded and state.expanded[pipeline.id] then
@@ -146,7 +147,8 @@ function M.build_lines(state)
             local wf_text   = string.format('    %s %s', wf_icon, wf.name or wf.id)
             local wf_hl     = M.status_hl(wf_status)
             push(wf_text,
-                 { type = 'workflow', id = wf.id, data = wf, pipeline_id = pipeline.id },
+                 { type = 'workflow', id = wf.id, data = wf,
+                   pipeline_id = pipeline.id, pipeline_number = pipeline.number },
                  wf_hl, 4, 4 + #wf_icon)
 
             local jobs = state.jobs and state.jobs[wf.id] or {}
@@ -157,7 +159,8 @@ function M.build_lines(state)
               local job_hl     = M.status_hl(job_status)
               push(job_text,
                    { type = 'job', id = job.id, data = job,
-                     workflow_id = wf.id, pipeline_id = pipeline.id },
+                     workflow_id = wf.id, pipeline_id = pipeline.id,
+                     pipeline_number = pipeline.number },
                    job_hl, 6, 6 + #job_icon)
             end
           end
@@ -172,13 +175,13 @@ function M.build_lines(state)
   -- spans: { col_start, col_end } 0-indexed, matching nvim_buf_add_highlight convention
   -- text: '  <CR> expand  r refresh  f filter  q close'
   --        ^2    ^6       ^15        ^26        ^36
-  -- text: '  a approve  x abort  R rerun'
-  --        ^2  ^13       ^22
+  -- text: '  a approve  x abort  R rerun  o open'
+  --        ^2  ^13       ^22     ^31
   local legend_rows = {
     { text  = '  <CR> expand  r refresh  f filter  q close',
       spans = { {2, 6}, {15, 16}, {26, 27}, {36, 37} } },
-    { text  = '  a approve  x abort  R rerun',
-      spans = { {2, 3}, {13, 14}, {22, 23} } },
+    { text  = '  a approve  x abort  R rerun  o open',
+      spans = { {2, 3}, {13, 14}, {22, 23}, {31, 32} } },
   }
   for _, row in ipairs(legend_rows) do
     push(row.text, { type = 'help' }, 'CCIHelp', 0, -1)
