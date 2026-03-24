@@ -71,34 +71,55 @@ function M.approve(line_map, cursor_line)
   end)
 end
 
---- Abort (cancel) the running workflow under the cursor.
+--- Abort (cancel) the running or on-hold workflow under the cursor.
+--- Also accepts an on_hold approval job row — cancels the parent workflow.
 --- @param line_map table
 --- @param cursor_line number
 function M.abort(line_map, cursor_line)
   local entry = resolve(line_map, cursor_line)
 
-  if not entry or entry.type ~= 'workflow' then
+  local wf_id, msg
+
+  if entry and entry.type == 'job' then
+    -- Allow aborting via an on_hold approval job row
+    local job = entry.data
+    if job.type ~= 'approval' or job.status ~= 'on_hold' then
+      vim.notify('[nvim-cci] No on-hold approval job on this line.', vim.log.levels.WARN)
+      return
+    end
+    wf_id = entry.workflow_id
+    if not wf_id then
+      vim.notify('[nvim-cci] Could not resolve workflow for this approval job.', vim.log.levels.ERROR)
+      return
+    end
+    local job_name = job.name or job.id
+    msg = string.format("Abort workflow '%s' (on-hold approval '%s')? [y/N]", wf_id, job_name)
+
+  elseif entry and entry.type == 'workflow' then
+    local wf = entry.data
+    if wf.status ~= 'running' and wf.status ~= 'on_hold' then
+      vim.notify('[nvim-cci] Workflow is not running or on hold.', vim.log.levels.WARN)
+      return
+    end
+    wf_id = wf.id
+    local name = wf.name or wf.id
+    msg = string.format("Abort workflow '%s'? [y/N]", name)
+
+  else
     vim.notify('[nvim-cci] No running workflow on this line.', vim.log.levels.WARN)
     return
   end
 
-  local wf = entry.data
-  if wf.status ~= 'running' then
-    vim.notify('[nvim-cci] Workflow is not running.', vim.log.levels.WARN)
+  if not confirm(msg) then
     return
   end
 
-  local name = wf.name or wf.id
-  if not confirm(string.format("Abort workflow '%s'? [y/N]", name)) then
-    return
-  end
-
-  get_api().cancel_workflow(wf.id, function(err, _)
+  get_api().cancel_workflow(wf_id, function(err, _)
     vim.schedule(function()
       if err then
         vim.notify('[nvim-cci] Failed to abort workflow: ' .. err, vim.log.levels.ERROR)
       else
-        vim.notify("[nvim-cci] Aborted workflow '" .. name .. "'.", vim.log.levels.INFO)
+        vim.notify("[nvim-cci] Aborted workflow '" .. wf_id .. "'.", vim.log.levels.INFO)
         get_panel().refresh()
       end
     end)

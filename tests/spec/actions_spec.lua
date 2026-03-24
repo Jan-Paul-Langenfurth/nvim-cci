@@ -255,6 +255,68 @@ describe('actions.abort()', function()
     vim.notify = orig_notify
     assert.is_true(warned)
   end)
+
+  it('calls cancel_workflow for an on_hold workflow and refreshes', function()
+    local api_called_with = nil
+    actions._api = {
+      cancel_workflow = function(id, cb) api_called_with = id; cb(nil, {}) end,
+    }
+    actions._panel   = make_panel()
+    actions._confirm = function() return true end
+
+    local line_map = { [1] = workflow_entry('wf-hold', 'deploy', 'on_hold') }
+    actions.abort(line_map, 1)
+
+    assert.equals('wf-hold', api_called_with)
+    assert.is_true(actions._panel._refreshed())
+  end)
+
+  it('calls cancel_workflow for an on_hold approval job row', function()
+    local api_called_with = nil
+    actions._api = {
+      cancel_workflow = function(id, cb) api_called_with = id; cb(nil, {}) end,
+    }
+    actions._panel   = make_panel()
+    actions._confirm = function() return true end
+
+    local entry = {
+      type        = 'job',
+      id          = 'job-hold',
+      workflow_id = 'wf-parent',
+      data        = { id = 'job-hold', name = 'hold-gate', status = 'on_hold', type = 'approval' },
+    }
+    local line_map = { [1] = entry }
+    actions.abort(line_map, 1)
+
+    assert.equals('wf-parent', api_called_with)
+    assert.is_true(actions._panel._refreshed())
+  end)
+
+  it('shows error and does not call API when approval job row has no workflow_id', function()
+    local api_called = false
+    local notified_level = nil
+    local orig_notify = vim.notify
+    vim.notify = function(_, level) notified_level = level end
+
+    actions._api = {
+      cancel_workflow = function() api_called = true end,
+    }
+    actions._panel   = make_panel()
+    actions._confirm = function() return true end
+
+    local entry = {
+      type = 'job',
+      id   = 'job-hold',
+      -- workflow_id intentionally missing
+      data = { id = 'job-hold', name = 'hold-gate', status = 'on_hold', type = 'approval' },
+    }
+    local line_map = { [1] = entry }
+    actions.abort(line_map, 1)
+
+    vim.notify = orig_notify
+    assert.is_false(api_called)
+    assert.equals(vim.log.levels.ERROR, notified_level)
+  end)
 end)
 
 -- ── rerun() ───────────────────────────────────────────────────────────────────

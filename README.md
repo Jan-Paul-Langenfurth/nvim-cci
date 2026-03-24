@@ -1,3 +1,5 @@
+> **Note:** This repository exists to explore **Spec-Driven Development (SDD)** — a workflow where PRDs and acceptance criteria are written first, then used to drive implementation via AI-assisted coding. The plugin itself is real and functional, but the primary goal is to experiment with the SDD process.
+
 # nvim-CCI
 
 [![Tests](https://github.com/your-username/nvim-CCI/actions/workflows/test.yml/badge.svg)](https://github.com/your-username/nvim-CCI/actions/workflows/test.yml)
