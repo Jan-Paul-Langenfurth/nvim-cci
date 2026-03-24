@@ -102,7 +102,7 @@ end)
 describe('render.build_lines() — loading', function()
   it('shows Loading… when state.loading is true', function()
     local lines = render.build_lines(make_state({ loading = true }))
-    assert.equals(1, #lines)
+    assert.equals(4, #lines)  -- 1 loading + 3 legend
     assert.truthy(lines[1]:find('Loading'))
   end)
 end)
@@ -112,7 +112,7 @@ end)
 describe('render.build_lines() — empty', function()
   it('shows "No pipelines found" when pipelines list is empty', function()
     local lines = render.build_lines(make_state())
-    assert.equals(1, #lines)
+    assert.equals(4, #lines)  -- 1 empty + 3 legend
     assert.truthy(lines[1]:find('No pipelines'))
   end)
 end)
@@ -127,7 +127,7 @@ describe('render.build_lines() — pipelines', function()
         pipeline('p2', 'running', 'feat/foo'),
       },
     }))
-    assert.equals(2, #lines)
+    assert.equals(5, #lines)  -- 2 pipelines + 3 legend
   end)
 
   it('includes the branch name in the line', function()
@@ -148,15 +148,19 @@ describe('render.build_lines() — pipelines', function()
     local _, highlights = render.build_lines(make_state({
       pipelines = { pipeline('p1', 'success', 'main') },
     }))
-    assert.equals(1, #highlights)
+    -- first highlight is the pipeline status; legend highlights follow
     assert.equals('CCIStatusPassed', highlights[1].hl_group)
   end)
 
-  it('produces no highlight entry for an unknown status', function()
+  it('produces no pipeline status highlight entry for an unknown status', function()
     local _, highlights = render.build_lines(make_state({
       pipelines = { pipeline('p1', 'bogus', 'main') },
     }))
-    assert.equals(0, #highlights)
+    -- only legend highlights present; none should be CCIStatus*
+    for _, h in ipairs(highlights) do
+      assert.is_nil(h.hl_group:find('^CCIStatus'),
+        'unexpected pipeline status highlight: ' .. h.hl_group)
+    end
   end)
 end)
 
@@ -182,7 +186,7 @@ describe('render.build_lines() — expand/collapse', function()
     })
     -- expanded is empty — pipeline is collapsed
     local lines = render.build_lines(s)
-    assert.equals(1, #lines)
+    assert.equals(4, #lines)  -- 1 pipeline + 3 legend
   end)
 
   it('shows workflow lines when pipeline is expanded', function()
@@ -193,8 +197,8 @@ describe('render.build_lines() — expand/collapse', function()
       jobs      = {},
     })
     local lines = render.build_lines(s)
-    -- 1 pipeline + 1 workflow
-    assert.equals(2, #lines)
+    -- 1 pipeline + 1 workflow + 3 legend
+    assert.equals(5, #lines)
     assert.truthy(lines[2]:find('build'))
   end)
 
@@ -204,7 +208,7 @@ describe('render.build_lines() — expand/collapse', function()
       expanded  = { p1 = true },
     })
     local lines = render.build_lines(s)
-    assert.equals(2, #lines)
+    assert.equals(5, #lines)  -- 1 pipeline + 1 placeholder + 3 legend
     assert.truthy(lines[2]:find('loading'))
   end)
 
@@ -216,8 +220,8 @@ describe('render.build_lines() — expand/collapse', function()
       jobs      = { ['w1'] = { job('j1', 'test', 'success'), job('j2', 'deploy', 'failed') } },
     })
     local lines = render.build_lines(s)
-    -- 1 pipeline + 1 workflow + 2 jobs
-    assert.equals(4, #lines)
+    -- 1 pipeline + 1 workflow + 2 jobs + 3 legend
+    assert.equals(7, #lines)
     assert.truthy(lines[3]:find('test'))
     assert.truthy(lines[4]:find('deploy'))
   end)
@@ -254,12 +258,12 @@ describe('render.build_lines() — expand/collapse', function()
       workflows = { ['p1'] = { workflow('w1', 'build', 'success') } },
     })
     local expanded_lines = render.build_lines(s)
-    assert.equals(2, #expanded_lines)
+    assert.equals(5, #expanded_lines)  -- 1 pipeline + 1 workflow + 3 legend
 
     -- Collapse
     s.expanded['p1'] = nil
     local collapsed_lines = render.build_lines(s)
-    assert.equals(1, #collapsed_lines)
+    assert.equals(4, #collapsed_lines)  -- 1 pipeline + 3 legend
   end)
 end)
 
@@ -272,8 +276,8 @@ describe('render.build_lines() — branch_filter header', function()
       pipelines     = { pipeline('p1', 'success', 'feat/my-branch') },
     })
     local lines = render.build_lines(s)
-    -- first line is the header, second is the pipeline row
-    assert.equals(2, #lines)
+    -- first line is the header, second is the pipeline row, then 3 legend
+    assert.equals(5, #lines)
     assert.truthy(lines[1]:find('%[branch: feat/my%-branch%]'))
   end)
 
@@ -282,16 +286,84 @@ describe('render.build_lines() — branch_filter header', function()
       pipelines = { pipeline('p1', 'success', 'main') },
     })
     local lines = render.build_lines(s)
-    assert.equals(1, #lines)
+    assert.equals(4, #lines)  -- 1 pipeline + 3 legend
     assert.is_nil(lines[1]:find('%[branch:'))
   end)
 
   it('header appears before pipelines and before loading message', function()
     local s = make_state({ branch_filter = 'main', loading = true })
     local lines = render.build_lines(s)
-    assert.equals(2, #lines)
+    assert.equals(5, #lines)  -- 1 branch header + 1 loading + 3 legend
     assert.truthy(lines[1]:find('%[branch:'))
     assert.truthy(lines[2]:find('Loading'))
+  end)
+end)
+
+-- ── Tests: keybinding legend ─────────────────────────────────────────────────
+
+describe('render.build_lines() — legend', function()
+  local function legend_lines(lines)
+    -- return only lines whose text contains '─' or known legend content
+    local result = {}
+    for _, l in ipairs(lines) do
+      if l:find('─') or l:find('expand') or l:find('approve') then
+        result[#result + 1] = l
+      end
+    end
+    return result
+  end
+
+  it('appends separator + 2 legend rows in empty state', function()
+    local lines = render.build_lines(make_state())
+    -- last 3 lines: separator + 2 legend rows
+    local n = #lines
+    assert.is_true(n >= 3)
+    assert.truthy(lines[n - 2]:find('─'))
+    assert.truthy(lines[n - 1]:find('expand'))
+    assert.truthy(lines[n]:find('approve'))
+  end)
+
+  it('appends separator + 2 legend rows in loading state', function()
+    local lines = render.build_lines(make_state({ loading = true }))
+    local n = #lines
+    assert.is_true(n >= 3)
+    assert.truthy(lines[n - 2]:find('─'))
+    assert.truthy(lines[n - 1]:find('expand'))
+    assert.truthy(lines[n]:find('approve'))
+  end)
+
+  it('appends legend even when pipelines are present', function()
+    local lines = render.build_lines(make_state({
+      pipelines = { pipeline('p1', 'success', 'main') },
+    }))
+    local n = #lines
+    assert.truthy(lines[n]:find('approve'))
+  end)
+
+  it('legend lines carry type="help" in line_meta', function()
+    local lines, _, meta = render.build_lines(make_state())
+    local n = #lines
+    assert.equals('help', meta[n - 2].type)
+    assert.equals('help', meta[n - 1].type)
+    assert.equals('help', meta[n].type)
+  end)
+
+  it('legend text contains all bound keys', function()
+    local lines = render.build_lines(make_state())
+    local legend_text = table.concat(lines, '\n')
+    for _, key in ipairs({ '<CR>', 'r', 'f', 'a', 'x', 'R', 'q' }) do
+      assert.truthy(legend_text:find(key, 1, true),
+        'expected key "' .. key .. '" in legend')
+    end
+  end)
+
+  it('each legend line fits within 50 characters', function()
+    local lines = render.build_lines(make_state())
+    local n = #lines
+    for i = n - 1, n do
+      assert.is_true(#lines[i] <= 50,
+        'legend line too long: ' .. #lines[i] .. ' chars: ' .. lines[i])
+    end
   end)
 end)
 

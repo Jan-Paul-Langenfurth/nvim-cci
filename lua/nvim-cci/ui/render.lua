@@ -43,6 +43,8 @@ function M.setup_highlights()
   vim.api.nvim_set_hl(0, 'CCIStatusRunning',  { link = 'DiagnosticWarn' })
   vim.api.nvim_set_hl(0, 'CCIStatusOnHold',   { link = 'DiagnosticInfo' })
   vim.api.nvim_set_hl(0, 'CCIStatusCanceled', { link = 'Comment' })
+  vim.api.nvim_set_hl(0, 'CCIHelp',           { link = 'Comment' })
+  vim.api.nvim_set_hl(0, 'CCIHelpKey',        { link = 'Special' })
 end
 
 -- ── Time formatting ───────────────────────────────────────────────────────────
@@ -116,54 +118,74 @@ function M.build_lines(state)
 
   if state.loading then
     push('  Loading…', { type = 'status' })
-    return lines, highlights, line_meta
-  end
-
-  if not state.pipelines or #state.pipelines == 0 then
+  elseif not state.pipelines or #state.pipelines == 0 then
     push('  No pipelines found.', { type = 'status' })
-    return lines, highlights, line_meta
-  end
+  else
+    for _, pipeline in ipairs(state.pipelines) do
+      local status = pipeline.state or pipeline.status or 'unknown'
+      local icon   = M.status_icon(status)
+      local branch = (pipeline.vcs and pipeline.vcs.branch)
+                     or pipeline.branch
+                     or '(unknown branch)'
+      local ago    = M.time_ago(pipeline.created_at)
+      local text   = string.format('  %s %s · %s', icon, branch, ago)
+      local hl     = M.status_hl(status)
+      -- icon starts at byte 2 (0-based), length of icon in UTF-8 bytes
+      push(text, { type = 'pipeline', id = pipeline.id, data = pipeline },
+           hl, 2, 2 + #icon)
 
-  for _, pipeline in ipairs(state.pipelines) do
-    local status = pipeline.state or pipeline.status or 'unknown'
-    local icon   = M.status_icon(status)
-    local branch = (pipeline.vcs and pipeline.vcs.branch)
-                   or pipeline.branch
-                   or '(unknown branch)'
-    local ago    = M.time_ago(pipeline.created_at)
-    local text   = string.format('  %s %s · %s', icon, branch, ago)
-    local hl     = M.status_hl(status)
-    -- icon starts at byte 2 (0-based), length of icon in UTF-8 bytes
-    push(text, { type = 'pipeline', id = pipeline.id, data = pipeline },
-         hl, 2, 2 + #icon)
+      if state.expanded and state.expanded[pipeline.id] then
+        local wfs = state.workflows and state.workflows[pipeline.id] or {}
+        if #wfs == 0 then
+          push('    ⋯ loading workflows…',
+               { type = 'status', pipeline_id = pipeline.id })
+        else
+          for _, wf in ipairs(wfs) do
+            local wf_status = wf.status or 'unknown'
+            local wf_icon   = M.status_icon(wf_status)
+            local wf_text   = string.format('    %s %s', wf_icon, wf.name or wf.id)
+            local wf_hl     = M.status_hl(wf_status)
+            push(wf_text,
+                 { type = 'workflow', id = wf.id, data = wf, pipeline_id = pipeline.id },
+                 wf_hl, 4, 4 + #wf_icon)
 
-    if state.expanded and state.expanded[pipeline.id] then
-      local wfs = state.workflows and state.workflows[pipeline.id] or {}
-      if #wfs == 0 then
-        push('    ⋯ loading workflows…',
-             { type = 'status', pipeline_id = pipeline.id })
-      else
-        for _, wf in ipairs(wfs) do
-          local wf_status = wf.status or 'unknown'
-          local wf_icon   = M.status_icon(wf_status)
-          local wf_text   = string.format('    %s %s', wf_icon, wf.name or wf.id)
-          local wf_hl     = M.status_hl(wf_status)
-          push(wf_text,
-               { type = 'workflow', id = wf.id, data = wf, pipeline_id = pipeline.id },
-               wf_hl, 4, 4 + #wf_icon)
-
-          local jobs = state.jobs and state.jobs[wf.id] or {}
-          for _, job in ipairs(jobs) do
-            local job_status = job.status or 'unknown'
-            local job_icon   = M.status_icon(job_status)
-            local job_text   = string.format('      %s %s', job_icon, job.name or job.id)
-            local job_hl     = M.status_hl(job_status)
-            push(job_text,
-                 { type = 'job', id = job.id, data = job,
-                   workflow_id = wf.id, pipeline_id = pipeline.id },
-                 job_hl, 6, 6 + #job_icon)
+            local jobs = state.jobs and state.jobs[wf.id] or {}
+            for _, job in ipairs(jobs) do
+              local job_status = job.status or 'unknown'
+              local job_icon   = M.status_icon(job_status)
+              local job_text   = string.format('      %s %s', job_icon, job.name or job.id)
+              local job_hl     = M.status_hl(job_status)
+              push(job_text,
+                   { type = 'job', id = job.id, data = job,
+                     workflow_id = wf.id, pipeline_id = pipeline.id },
+                   job_hl, 6, 6 + #job_icon)
+            end
           end
         end
+      end
+    end
+  end
+
+  -- ── Keybinding legend ────────────────────────────────────────────────────────
+  push('  ' .. ('─'):rep(43), { type = 'help' }, 'CCIHelp', 0, -1)
+
+  local legend_rows = {
+    { text = '  <CR> expand  r refresh  f filter  q close',
+      keys = { '<CR>', 'r', 'f', 'q' } },
+    { text = '  a approve  x abort  R rerun',
+      keys = { 'a', 'x', 'R' } },
+  }
+  for _, row in ipairs(legend_rows) do
+    push(row.text, { type = 'help' }, 'CCIHelp', 0, -1)
+    for _, key in ipairs(row.keys) do
+      local s, e = row.text:find(key, 1, true)
+      if s then
+        highlights[#highlights + 1] = {
+          line      = #lines - 1,
+          col_start = s - 1,  -- 0-based
+          col_end   = e,
+          hl_group  = 'CCIHelpKey',
+        }
       end
     end
   end
