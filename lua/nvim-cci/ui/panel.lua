@@ -298,21 +298,11 @@ function M.toggle_expand()
   state.expanded[pid] = true
   render.draw(panel_buf, state, { legend = false })
 
-  -- Fetch workflows if not already cached
-  if state.workflows[pid] then return end
-
-  api.get_workflows(pid, function(err, data)
-    vim.schedule(function()
-      if err then
-        vim.notify('[nvim-cci] Error loading workflows: ' .. err, vim.log.levels.ERROR)
-        return
-      end
-      state.workflows[pid] = (data and data.items) or {}
-      if is_open() then render.draw(panel_buf, state, { legend = false }) end
-
-      -- Fetch jobs for each workflow
-      for _, wf in ipairs(state.workflows[pid]) do
-        local wf_id = wf.id
+  -- Helper: fetch jobs for any workflows not yet loaded
+  local function fetch_missing_jobs(wfs)
+    for _, wf in ipairs(wfs) do
+      local wf_id = wf.id
+      if not state.jobs[wf_id] then
         api.get_jobs(wf_id, function(jerr, jdata)
           vim.schedule(function()
             if not jerr and jdata then
@@ -322,6 +312,24 @@ function M.toggle_expand()
           end)
         end)
       end
+    end
+  end
+
+  -- If workflows already cached (pre-fetched by refresh), just fetch missing jobs
+  if state.workflows[pid] then
+    fetch_missing_jobs(state.workflows[pid])
+    return
+  end
+
+  api.get_workflows(pid, function(err, data)
+    vim.schedule(function()
+      if err then
+        vim.notify('[nvim-cci] Error loading workflows: ' .. err, vim.log.levels.ERROR)
+        return
+      end
+      state.workflows[pid] = (data and data.items) or {}
+      if is_open() then render.draw(panel_buf, state, { legend = false }) end
+      fetch_missing_jobs(state.workflows[pid])
     end)
   end)
 end
