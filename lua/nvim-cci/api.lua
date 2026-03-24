@@ -107,11 +107,12 @@ function M.rerun_workflow(workflow_id, cb)
   post('/workflow/' .. workflow_id .. '/rerun', cb)
 end
 
---- POST /workflow/approval/{id} — approves a hold job.
+--- POST /workflow/{workflow_id}/approve/{approval_request_id} — approves a hold job.
+--- @param workflow_id string
 --- @param approval_request_id string
 --- @param cb function  cb(err, data)
-function M.approve_job(approval_request_id, cb)
-  post('/workflow/approval/' .. approval_request_id, cb)
+function M.approve_job(workflow_id, approval_request_id, cb)
+  post('/workflow/' .. workflow_id .. '/approve/' .. approval_request_id, cb)
 end
 
 --- Parse a git remote URL into a CircleCI project slug.

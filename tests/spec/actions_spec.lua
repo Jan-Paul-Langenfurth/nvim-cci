@@ -17,7 +17,7 @@ local actions = require('nvim-cci.actions')
 local function make_api(responses)
   -- responses: table keyed by method name, value is { err, data }
   return {
-    approve_job      = function(id, cb) local r = responses.approve_job or {}; cb(r[1], r[2]) end,
+    approve_job      = function(wf_id, id, cb) local r = responses.approve_job or {}; cb(r[1], r[2]) end,
     cancel_workflow  = function(id, cb) local r = responses.cancel_workflow or {}; cb(r[1], r[2]) end,
     rerun_workflow   = function(id, cb) local r = responses.rerun_workflow or {}; cb(r[1], r[2]) end,
   }
@@ -39,10 +39,11 @@ local function job_entry(id, name, status, job_type)
   }
 end
 
-local function approval_job_entry(id, name)
+local function approval_job_entry(id, name, workflow_id)
   return {
-    type = 'job',
-    id   = id,
+    type        = 'job',
+    id          = id,
+    workflow_id = workflow_id or 'wf-default',
     data = {
       id                  = id,
       approval_request_id = id,
@@ -87,17 +88,18 @@ describe('actions.approve()', function()
   after_each(teardown)
 
   it('calls approve_job and refreshes on success', function()
-    local api_called_with = nil
+    local called_wf, called_approval = nil, nil
     actions._api = {
-      approve_job = function(id, cb) api_called_with = id; cb(nil, {}) end,
+      approve_job = function(wf_id, approval_id, cb) called_wf = wf_id; called_approval = approval_id; cb(nil, {}) end,
     }
     actions._panel   = make_panel()
     actions._confirm = function() return true end
 
-    local line_map = { [2] = approval_job_entry('job-1', 'deploy') }
+    local line_map = { [2] = approval_job_entry('job-1', 'deploy', 'wf-99') }
     actions.approve(line_map, 2)
 
-    assert.equals('job-1', api_called_with)
+    assert.equals('wf-99',  called_wf)
+    assert.equals('job-1', called_approval)
     assert.is_true(actions._panel._refreshed())
   end)
 
@@ -493,11 +495,8 @@ describe('actions.open_browser()', function()
     assert.is_nil(opened_url)
   end)
 
-  it('errors and does not open when job_number is missing', function()
-    local opened_url    = nil
-    local notified_level = nil
-    local orig_notify = vim.notify
-    vim.notify = function(_, level) notified_level = level end
+  it('falls back to workflow URL when job_number is missing (approval/pending jobs)', function()
+    local opened_url = nil
     setup_open(function(url) opened_url = url end)
 
     local entry = {
@@ -505,14 +504,13 @@ describe('actions.open_browser()', function()
       id              = 'job-uuid',
       pipeline_number = 42,
       workflow_id     = 'wf-uuid',
-      data            = { id = 'job-uuid', name = 'test', status = 'failed' },
+      data            = { id = 'job-uuid', name = 'hold', status = 'on_hold', type = 'approval' },
       -- job_number intentionally missing
     }
     actions.open_browser({ [1] = entry }, 1, SLUG)
 
-    vim.notify = orig_notify
-    assert.equals(vim.log.levels.ERROR, notified_level)
-    assert.is_nil(opened_url)
+    local expected = 'https://app.circleci.com/pipelines/' .. SLUG .. '/42/workflows/wf-uuid'
+    assert.equals(expected, opened_url)
   end)
 
   it('errors and does not open when pipeline_number is missing', function()

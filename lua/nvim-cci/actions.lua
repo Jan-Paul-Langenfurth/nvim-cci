@@ -73,9 +73,14 @@ function M.approve(line_map, cursor_line)
     return
   end
 
+  local wf_id = entry.workflow_id
+  if not wf_id then
+    vim.notify('[nvim-cci] Could not resolve workflow for this approval job.', vim.log.levels.ERROR)
+    return
+  end
   -- CircleCI uses approval_request_id when approving a hold job
   local approval_id = job.approval_request_id or job.id
-  get_api().approve_job(approval_id, function(err, _)
+  get_api().approve_job(wf_id, approval_id, function(err, _)
     vim.schedule(function()
       if err then
         vim.notify('[nvim-cci] Failed to approve job: ' .. err, vim.log.levels.ERROR)
@@ -202,11 +207,12 @@ function M.open_browser(line_map, cursor_line, slug)
     url = base .. '/' .. pn .. '/workflows/' .. entry.id
   elseif entry.type == 'job' then
     local jn = entry.data and entry.data.job_number
-    if not jn then
-      vim.notify('[nvim-cci] Job number unavailable.', vim.log.levels.ERROR)
-      return
+    if jn then
+      url = base .. '/' .. pn .. '/workflows/' .. entry.workflow_id .. '/jobs/' .. jn
+    else
+      -- Approval / blocked / pending jobs have no job_number; open the workflow page
+      url = base .. '/' .. pn .. '/workflows/' .. entry.workflow_id
     end
-    url = base .. '/' .. pn .. '/workflows/' .. entry.workflow_id .. '/jobs/' .. jn
   end
 
   open_url(url)

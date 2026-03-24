@@ -177,15 +177,15 @@ describe('api (success responses)', function()
   end)
 
   describe('approve_job()', function()
-    it('calls POST /workflow/approval/{id}', function()
+    it('calls POST /workflow/{workflow_id}/approve/{approval_request_id}', function()
       local mock_curl = setup_api(200, {})
 
       local got_err
-      api.approve_job('approval-123', function(err) got_err = err end)
+      api.approve_job('wf-abc', 'approval-123', function(err) got_err = err end)
 
       assert.is_nil(got_err)
       assert.equals('POST', mock_curl._captured.method)
-      assert.equals(BASE_URL .. '/workflow/approval/approval-123', mock_curl._captured.url)
+      assert.equals(BASE_URL .. '/workflow/wf-abc/approve/approval-123', mock_curl._captured.url)
     end)
   end)
 end)
