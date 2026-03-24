@@ -15,6 +15,8 @@ local state = {
 
 local panel_buf  = nil
 local panel_win  = nil
+local legend_buf = nil
+local legend_win = nil
 local prev_win   = nil   -- window to restore focus to on close
 
 -- Exposed for testing / Phase 5 access
@@ -69,7 +71,22 @@ local function create_buf()
   return buf
 end
 
-local function create_win(buf)
+local function create_legend_buf()
+  local render = require('nvim-cci.ui.render')
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[buf].buftype    = 'nofile'
+  vim.bo[buf].bufhidden  = 'wipe'
+  vim.bo[buf].modifiable = false
+  render.draw_legend(buf)
+  -- Allow closing the panel from the legend window
+  vim.keymap.set('n', 'q', function() M.close() end,
+    { noremap = true, silent = true, buffer = buf })
+  return buf
+end
+
+--- Create the vsplit panel window plus a fixed 3-line legend window below it.
+--- Returns (panel_win, legend_win).
+local function create_win(buf, lbuf)
   prev_win = vim.api.nvim_get_current_win()
   vim.cmd('vsplit')
   local win = vim.api.nvim_get_current_win()
@@ -79,7 +96,22 @@ local function create_win(buf)
   vim.wo[win].relativenumber = false
   vim.wo[win].wrap           = false
   vim.wo[win].signcolumn     = 'no'
-  return win
+
+  -- Split a fixed-height window at the bottom of the panel column for the legend
+  vim.cmd('belowright split')
+  local lwin = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(lwin, lbuf)
+  vim.api.nvim_win_set_height(lwin, 3)
+  vim.wo[lwin].number         = false
+  vim.wo[lwin].relativenumber = false
+  vim.wo[lwin].wrap           = false
+  vim.wo[lwin].signcolumn     = 'no'
+  vim.wo[lwin].winfixheight   = true
+  vim.wo[lwin].cursorline     = false
+
+  -- Return focus to main pipeline window
+  vim.api.nvim_set_current_win(win)
+  return win, lwin
 end
 
 -- ── Public API ────────────────────────────────────────────────────────────────
@@ -111,18 +143,42 @@ function M.open()
   state.loading       = true
   state.branch_filter = nil
 
-  panel_buf = create_buf()
-  panel_win = create_win(panel_buf)
+  legend_buf = create_legend_buf()
+  panel_buf  = create_buf()
+  panel_win, legend_win = create_win(panel_buf, legend_buf)
 
   M._slug = slug  -- cache for refresh; also exposed for tests
 
-  render.draw(panel_buf, state)
+  -- Clean up both windows if the panel is closed externally (e.g. :q)
+  vim.api.nvim_create_autocmd('WinClosed', {
+    pattern  = tostring(panel_win),
+    once     = true,
+    callback = function()
+      if legend_win and vim.api.nvim_win_is_valid(legend_win) then
+        pcall(vim.api.nvim_win_close, legend_win, true)
+      end
+      panel_win  = nil
+      panel_buf  = nil
+      legend_win = nil
+      legend_buf = nil
+      if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+        vim.api.nvim_set_current_win(prev_win)
+      end
+    end,
+  })
+
+  render.draw(panel_buf, state, { legend = false })
   M.refresh()
 end
 
 --- Close the CCI side panel and restore focus to the previous window.
 function M.close()
   if not is_open() then return end
+  if legend_win and vim.api.nvim_win_is_valid(legend_win) then
+    pcall(vim.api.nvim_win_close, legend_win, true)
+  end
+  legend_win = nil
+  legend_buf = nil
   vim.api.nvim_win_close(panel_win, true)
   panel_win = nil
   panel_buf = nil
@@ -147,7 +203,7 @@ function M.refresh()
   local render = require('nvim-cci.ui.render')
 
   state.loading = true
-  render.draw(panel_buf, state)
+  render.draw(panel_buf, state, { legend = false })
 
   api.get_pipelines(M._slug, state.branch_filter, function(err, data)
     vim.schedule(function()
@@ -159,7 +215,23 @@ function M.refresh()
         state.pipelines = (data and data.items) or {}
       end
       if is_open() then
-        render.draw(panel_buf, state)
+        render.draw(panel_buf, state, { legend = false })
+      end
+      -- Background-fetch workflows for all pipelines so icons show immediately
+      for _, pipeline in ipairs(state.pipelines) do
+        local pid = pipeline.id
+        if not state.workflows[pid] then
+          api.get_workflows(pid, function(werr, wdata)
+            vim.schedule(function()
+              if not werr and wdata then
+                state.workflows[pid] = wdata.items or {}
+                if is_open() then
+                  render.draw(panel_buf, state, { legend = false })
+                end
+              end
+            end)
+          end)
+        end
       end
     end)
   end)
@@ -210,22 +282,21 @@ function M.toggle_expand()
   -- Get the current cursor line (1-indexed)
   local cursor_line = vim.api.nvim_win_get_cursor(panel_win)[1]
 
-  -- Build current line metadata to find out what the cursor is on
-  local _, _, line_meta = render.build_lines(state)
-  local meta = line_meta[cursor_line]
+  -- Use the line map from the last draw() call
+  local meta = render.line_map and render.line_map[cursor_line]
   if not meta or meta.type ~= 'pipeline' then return end
 
   local pid = meta.id
   if state.expanded[pid] then
     -- Collapse
     state.expanded[pid] = nil
-    render.draw(panel_buf, state)
+    render.draw(panel_buf, state, { legend = false })
     return
   end
 
   -- Expand
   state.expanded[pid] = true
-  render.draw(panel_buf, state)
+  render.draw(panel_buf, state, { legend = false })
 
   -- Fetch workflows if not already cached
   if state.workflows[pid] then return end
@@ -237,7 +308,7 @@ function M.toggle_expand()
         return
       end
       state.workflows[pid] = (data and data.items) or {}
-      if is_open() then render.draw(panel_buf, state) end
+      if is_open() then render.draw(panel_buf, state, { legend = false }) end
 
       -- Fetch jobs for each workflow
       for _, wf in ipairs(state.workflows[pid]) do
@@ -247,7 +318,7 @@ function M.toggle_expand()
             if not jerr and jdata then
               state.jobs[wf_id] = jdata.items or {}
             end
-            if is_open() then render.draw(panel_buf, state) end
+            if is_open() then render.draw(panel_buf, state, { legend = false }) end
           end)
         end)
       end

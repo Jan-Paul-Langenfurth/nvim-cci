@@ -134,13 +134,53 @@ end
 
 -- ── Line builder (pure function) ──────────────────────────────────────────────
 
+-- ── Legend (shared between main buffer and fixed legend window) ───────────────
+
+local LEGEND_ROWS = {
+  { text  = '  <CR> expand  r refresh  f filter  q close',
+    spans = { {2, 6}, {15, 16}, {26, 27}, {36, 37} } },
+  { text  = '  a approve  x abort  R rerun  o open',
+    spans = { {2, 3}, {13, 14}, {22, 23}, {31, 32} } },
+}
+
+--- Return the 3 legend lines and their highlight specs (0-based line indices).
+--- @return string[], table[]
+function M.build_legend_lines()
+  local lines, highlights = {}, {}
+  lines[1] = '  ' .. ('─'):rep(43)
+  highlights[#highlights + 1] = { line = 0, col_start = 0, col_end = -1, hl_group = 'CCIHelp' }
+  for i, row in ipairs(LEGEND_ROWS) do
+    lines[i + 1] = row.text
+    highlights[#highlights + 1] = { line = i, col_start = 0, col_end = -1, hl_group = 'CCIHelp' }
+    for _, span in ipairs(row.spans) do
+      highlights[#highlights + 1] = { line = i, col_start = span[1], col_end = span[2], hl_group = 'CCIHelpKey' }
+    end
+  end
+  return lines, highlights
+end
+
+--- Write legend content into a buffer (used by the fixed legend split window).
+--- @param buf number
+function M.draw_legend(buf)
+  local lines, highlights = M.build_legend_lines()
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.bo[buf].modifiable = false
+  local ns = vim.api.nvim_create_namespace('nvim-cci')
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  for _, h in ipairs(highlights) do
+    vim.api.nvim_buf_add_highlight(buf, ns, h.hl_group, h.line, h.col_start, h.col_end)
+  end
+end
+
 --- Build display lines, highlight specs, and per-line metadata from state.
 ---
 --- @param state table  { pipelines, expanded, workflows, jobs, loading }
+--- @param opts  table|nil  { legend = bool }  include legend rows (default true)
 --- @return lines table          list of strings (0-indexed for nvim_buf_set_lines)
 --- @return highlights table     list of { line, col_start, col_end, hl_group }
 --- @return line_meta table      1-indexed; each entry: { type, id, data, pipeline_id?, workflow_id? }
-function M.build_lines(state)
+function M.build_lines(state, opts)
   local lines      = {}
   local highlights = {}
   local line_meta  = {}  -- 1-indexed, parallel to lines
@@ -222,29 +262,20 @@ function M.build_lines(state)
     end
   end
 
-  -- ── Keybinding legend ────────────────────────────────────────────────────────
-  push('  ' .. ('─'):rep(43), { type = 'help' }, 'CCIHelp', 0, -1)
-
-  -- spans: { col_start, col_end } 0-indexed, matching nvim_buf_add_highlight convention
-  -- text: '  <CR> expand  r refresh  f filter  q close'
-  --        ^2    ^6       ^15        ^26        ^36
-  -- text: '  a approve  x abort  R rerun  o open'
-  --        ^2  ^13       ^22     ^31
-  local legend_rows = {
-    { text  = '  <CR> expand  r refresh  f filter  q close',
-      spans = { {2, 6}, {15, 16}, {26, 27}, {36, 37} } },
-    { text  = '  a approve  x abort  R rerun  o open',
-      spans = { {2, 3}, {13, 14}, {22, 23}, {31, 32} } },
-  }
-  for _, row in ipairs(legend_rows) do
-    push(row.text, { type = 'help' }, 'CCIHelp', 0, -1)
-    for _, span in ipairs(row.spans) do
-      highlights[#highlights + 1] = {
-        line      = #lines - 1,
-        col_start = span[1],
-        col_end   = span[2],
-        hl_group  = 'CCIHelpKey',
-      }
+  -- ── Keybinding legend (only when not using a dedicated legend window) ────────
+  local include_legend = (opts == nil) or (opts.legend ~= false)
+  if include_legend then
+    push('  ' .. ('─'):rep(43), { type = 'help' }, 'CCIHelp', 0, -1)
+    for _, row in ipairs(LEGEND_ROWS) do
+      push(row.text, { type = 'help' }, 'CCIHelp', 0, -1)
+      for _, span in ipairs(row.spans) do
+        highlights[#highlights + 1] = {
+          line      = #lines - 1,
+          col_start = span[1],
+          col_end   = span[2],
+          hl_group  = 'CCIHelpKey',
+        }
+      end
     end
   end
 
@@ -257,9 +288,10 @@ end
 --- Also updates M.line_map with the current 1-indexed line → entity mapping.
 --- @param buf number  buffer handle
 --- @param state table
+--- @param opts table|nil  { legend = bool }  passed through to build_lines
 --- @return table  line_meta (1-indexed, for use by panel toggle/action logic)
-function M.draw(buf, state)
-  local lines, highlights, line_meta = M.build_lines(state)
+function M.draw(buf, state, opts)
+  local lines, highlights, line_meta = M.build_lines(state, opts)
 
   -- Expose for actions module: render.line_map[linenr] = { type, id, data, ... }
   M.line_map = line_meta
